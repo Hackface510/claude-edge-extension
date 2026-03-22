@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Assistant</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --bg-2: #161b22; --bg-3: #21262d; --bg-4: #30363d;
+      --border: #30363d; --text: #e6edf3; --text-2: #8b949e; --accent: #6366f1;
+      --accent-hover: #818cf8; --success: #22c55e; --error: #f87171; --warning: #fb923c;
+      --user-bg: #1e3a5f; --ai-bg: #21262d; --radius: 8px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; font-size: 14px; }
+
+    /* Header */
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .header-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+    .header-title svg { color: var(--accent); }
+    .header-actions { display: flex; gap: 6px; }
+
+    /* Tabs */
+    .tabs { display: flex; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0; overflow-x: auto; }
+    .tab { flex: 1; min-width: 0; padding: 10px 6px; text-align: center; cursor: pointer; font-size: 11px; color: var(--text-2); border: none; background: none; border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap; }
+    .tab:hover { color: var(--text); background: var(--bg-3); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-icon { display: block; font-size: 16px; margin-bottom: 2px; }
+
+    /* Tab panels */
+    .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .panel.active { display: flex; }
+
+    /* Chat panel */
+    .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .message { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
+    .message.user .bubble { background: var(--user-bg); align-self: flex-end; border-radius: var(--radius) var(--radius) 2px var(--radius); }
+    .message.assistant .bubble { background: var(--ai-bg); align-self: flex-start; border-radius: var(--radius) var(--radius) var(--radius) 2px; }
+    .bubble { padding: 10px 14px; line-height: 1.5; font-size: 13px; word-wrap: break-word; max-width: 92%; }
+    .bubble pre { background: var(--bg); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; margin: 6px 0; }
+    .bubble code:not(pre code) { background: var(--bg); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    .message-time { font-size: 10px; color: var(--text-2); align-self: flex-end; }
+    .message.assistant .message-time { align-self: flex-start; }
+
+    .chat-input-area { padding: 10px; border-top: 1px solid var(--border); background: var(--bg-2); flex-shrink: 0; }
+    .chat-context-toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+    .chat-context-toggle input { accent-color: var(--accent); }
+    .chat-input-row { display: flex; gap: 8px; }
+    .chat-input { flex: 1; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; color: var(--text); font-family: inherit; font-size: 13px; resize: none; min-height: 44px; max-height: 140px; outline: none; transition: border-color 0.15s; }
+    .chat-input:focus { border-color: var(--accent); }
+    .send-btn { background: var(--accent); border: none; border-radius: var(--radius); padding: 0 16px; color: white; cursor: pointer; font-weight: 600; font-size: 13px; transition: background 0.15s; flex-shrink: 0; }
+    .send-btn:hover { background: var(--accent-hover); }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .clear-btn { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; color: var(--text-2); cursor: pointer; font-size: 12px; transition: all 0.15s; }
+    .clear-btn:hover { color: var(--text); border-color: var(--text-2); }
+    .typing-indicator { display: flex; gap: 4px; padding: 8px 14px; }
+    .typing-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-2); animation: bounce 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+    /* Automate panel */
+    .panel-content { flex: 1; overflow-y: auto; padding: 14px; }
+    .section-title { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+    .textarea { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; color: var(--text); font-family: inherit; font-size: 13px; resize: vertical; min-height: 80px; outline: none; transition: border-color 0.15s; }
+    .textarea:focus { border-color: var(--accent); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: var(--radius); padding: 9px 16px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-danger { background: #7f1d1d; color: var(--error); border: 1px solid #991b1b; }
+    .btn-danger:hover { background: #991b1b; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .steps-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .step-item { background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+    .step-item .step-num { background: var(--accent); color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .step-item .step-action { font-family: monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+    .step-done { border-color: var(--success) !important; }
+    .step-error { border-color: var(--error) !important; }
+
+    /* Workflows panel */
+    .workflow-card { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+    .workflow-name { font-weight: 600; margin-bottom: 4px; }
+    .workflow-meta { font-size: 11px; color: var(--text-2); margin-bottom: 8px; }
+    .workflow-actions { display: flex; gap: 6px; }
+
+    /* Record controls */
+    .record-indicator { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--bg-3); border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 12px; font-size: 13px; }
+    .record-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-2); flex-shrink: 0; }
+    .record-dot.recording { background: var(--error); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Extract panel */
+    .result-box { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; margin-top: 12px; max-height: 300px; overflow-y: auto; }
+    .file-input { display: none; }
+    .file-label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: var(--bg-3); border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 16px; font-size: 13px; color: var(--text-2); transition: all 0.15s; }
+    .file-label:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Settings panel */
+    .setting-group { margin-bottom: 18px; }
+    .setting-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .setting-input { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s; }
+    .setting-input:focus { border-color: var(--accent); }
+    .setting-select { width: 100%; background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; appearance: none; cursor: pointer; }
+    .setting-hint { font-size: 11px; color: var(--text-2); margin-top: 4px; }
+    .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .status-badge.success { background: #14532d; color: var(--success); }
+    .status-badge.error { background: #7f1d1d; color: var(--error); }
+    .status-badge.pending { background: var(--bg-4); color: var(--text-2); }
+
+    /* Utilities */
+    .divider { height: 1px; background: var(--border); margin: 12px 0; }
+    .empty-state { text-align: center; color: var(--text-2); padding: 32px 20px; font-size: 13px; }
+    .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+    .error-msg { color: var(--error); background: #7f1d1d30; border: 1px solid #7f1d1d; border-radius: var(--radius); padding: 8px 12px; font-size: 12px; margin-top: 8px; }
+    .success-msg { color: var(--success); background: #14532d30; border: 1px solid #14532d; border-radius: var(--radius); padding: 8px 12px; font-size: 12px; margin-top: 8px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-2); }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+      Claude Assistant
+    </div>
+    <div class="header-actions">
+      <button class="clear-btn" id="clearChatBtn" title="Clear chat history" style="display:none">Clear</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="chat"><span class="tab-icon">💬</span>Chat</button>
+    <button class="tab" data-tab="automate"><span class="tab-icon">⚡</span>Automate</button>
+    <button class="tab" data-tab="workflows"><span class="tab-icon">🔄</span>Workflows</button>
+    <button class="tab" data-tab="extract"><span class="tab-icon">📄</span>Extract</button>
+    <button class="tab" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
+  </div>
+
+  <!-- CHAT PANEL -->
+  <div class="panel active" id="panel-chat">
+    <div class="chat-messages" id="chatMessages">
+      <div class="empty-state"><div class="icon">🤖</div><div>Ask Claude anything, or toggle "This page" to ask about the current website.</div></div>
+    </div>
+    <div class="chat-input-area">
+      <label class="chat-context-toggle">
+        <input type="checkbox" id="includePageCtx" />
+        Include this page's content
+      </label>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chatInput" placeholder="Ask Claude anything..." rows="1"></textarea>
+        <button class="send-btn" id="sendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTOMATE PANEL -->
+  <div class="panel" id="panel-automate">
+    <div class="panel-content">
+      <div class="section-title">Automate this page</div>
+      <textarea class="textarea" id="automateTask" placeholder="Describe what you want Claude to do on this page...&#10;&#10;Examples:&#10;• Fill in the search box with 'AI news' and click search&#10;• Click the first product and add it to cart&#10;• Find all email addresses on this page" rows="4"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="automateBtn">Generate Steps</button>
+        <button class="btn btn-secondary" id="executeAllBtn" style="display:none">Execute All</button>
+      </div>
+      <div id="automateError" class="error-msg" style="display:none"></div>
+      <div class="steps-list" id="stepsList"></div>
+    </div>
+  </div>
+
+  <!-- WORKFLOWS PANEL -->
+  <div class="panel" id="panel-workflows">
+    <div class="panel-content">
+      <div class="section-title">Workflow Recorder</div>
+      <div class="record-indicator" id="recordIndicator">
+        <div class="record-dot" id="recordDot"></div>
+        <span id="recordStatus">Ready to record</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="startRecordBtn">Start Recording</button>
+        <button class="btn btn-danger" id="stopRecordBtn" style="display:none">Stop Recording</button>
+      </div>
+      <div id="recordingSteps" style="display:none; margin-top: 12px;">
+        <div class="section-title" style="margin-bottom:8px">Recorded Steps: <span id="stepCount">0</span></div>
+        <div id="liveSteps" class="steps-list"></div>
+        <div class="btn-row" style="margin-top:10px">
+          <input type="text" class="setting-input" id="workflowName" placeholder="Name your workflow..." style="flex:1" />
+          <button class="btn btn-primary" id="saveWorkflowBtn">Save</button>
+        </div>
+      </div>
+      <div class="divider" style="margin-top:16px"></div>
+      <div class="section-title">Saved Workflows</div>
+      <div id="workflowList"></div>
+    </div>
+  </div>
+
+  <!-- EXTRACT PANEL -->
+  <div class="panel" id="panel-extract">
+    <div class="panel-content">
+      <div class="section-title">Extract from current page</div>
+      <textarea class="textarea" id="extractRequest" placeholder="What do you want to extract?&#10;&#10;Examples:&#10;• Summarize this article&#10;• List all prices and product names&#10;• Extract all links and their titles" rows="3"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="extractBtn">Extract</button>
+      </div>
+      <div class="divider"></div>
+      <div class="section-title">Document Analysis</div>
+      <label class="file-label">
+        <span>📎</span> Upload a document (TXT, MD, JSON, CSV)
+        <input class="file-input" type="file" id="docFile" accept=".txt,.md,.json,.csv" />
+      </label>
+      <textarea class="textarea" id="docRequest" placeholder="Ask something about the document..." rows="2" style="margin-top:8px"></textarea>
+      <div class="btn-row"><button class="btn btn-primary" id="analyzeDocBtn">Analyze</button></div>
+      <pre id="extractResult" class="result-box" style="display:none"></pre>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div class="panel" id="panel-settings">
+    <div class="panel-content">
+      <div class="section-title">API Configuration</div>
+      <div class="setting-group">
+        <div class="setting-label">Anthropic API Key</div>
+        <div style="display:flex; gap:8px; align-items:center">
+          <input class="setting-input" type="password" id="apiKeyInput" placeholder="sk-ant-..." style="flex:1" />
+          <button class="btn btn-secondary" id="toggleKeyVisibility">👁</button>
+        </div>
+        <div class="setting-hint">Get your key from <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="saveKeyBtn">Save Key</button>
+        <button class="btn btn-secondary" id="testConnBtn">Test Connection</button>
+      </div>
+      <div id="connStatus" style="margin-top:8px;display:none"></div>
+
+      <div class="divider"></div>
+      <div class="section-title">Model Settings</div>
+      <div class="setting-group">
+        <div class="setting-label">Model</div>
+        <select class="setting-select" id="modelSelect">
+          <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Recommended)</option>
+          <option value="claude-haiku-4-5">Claude Haiku 4.5 (Faster)</option>
+          <option value="claude-opus-4-5">Claude Opus 4.5 (Most capable)</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <div class="setting-label">Max Tokens</div>
+        <input class="setting-input" type="number" id="maxTokensInput" value="4096" min="512" max="8192" />
+        <div class="setting-hint">Higher = longer responses, more API cost</div>
+      </div>
+      <button class="btn btn-primary" id="saveSettingsBtn" style="margin-top:4px">Save Settings</button>
+
+      <div class="divider"></div>
+      <div class="section-title">Data</div>
+      <div class="btn-row">
+        <button class="btn btn-danger" id="clearAllDataBtn">Clear All Data</button>
+      </div>
+      <div id="settingsMsg" style="margin-top:8px;display:none"></div>
+
+      <div class="divider"></div>
+      <div style="font-size:11px;color:var(--text-2);text-align:center">Claude Edge Extension v1.0.0<br>Powered by Anthropic Claude API</div>
+    </div>
+  </div>
+
+  <script src="side_panel.js"></script>
+</body>
+  </html>
