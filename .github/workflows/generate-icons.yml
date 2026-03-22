@@ -1,0 +1,43 @@
+name: Generate Icons
+
+on:
+  push:
+    paths:
+      - 'icons/icon.svg'
+  workflow_dispatch:
+
+jobs:
+  generate-icons:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install cairosvg
+        run: pip install cairosvg
+
+      - name: Generate PNG icons
+        run: |
+          python - <<'EOF'
+          import cairosvg, os
+          svg = 'icons/icon.svg'
+          for size in [16, 32, 48, 128]:
+            cairosvg.svg2png(url=svg, write_to=f'icons/icon{size}.png', output_width=size, output_height=size)
+            print(f'Generated icons/icon{size}.png ({size}x{size})')
+          EOF
+
+      - name: Commit generated icons
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add icons/icon*.png
+          git diff --staged --quiet || git commit -m "chore: generate PNG icons from SVG [skip ci]"
+          git push
